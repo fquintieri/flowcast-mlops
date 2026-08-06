@@ -1,0 +1,2 @@
+# Arquivo: airflow/dags/.airflowignore
+util.py
