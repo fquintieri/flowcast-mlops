@@ -7,7 +7,7 @@ DUCKDB_POOL = "duckdb_writer"
 
 # Parametros de ML repassados aos containers apenas quando definidos; os valores
 # padrao vivem em ml_agent/src/config.py.
-ML_CONFIG_VARS = ["HOLDOUT_DAYS"]
+ML_CONFIG_VARS = ["HOLDOUT_DAYS", "DECISION_METRIC", "MIN_IMPROVEMENT", "MAX_BIAS_DEGRADATION"]
 
 
 def get_ml_config_env():

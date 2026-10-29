@@ -76,6 +76,9 @@ services:
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
       - AIRFLOW__WEBSERVER__SECRET_KEY= 'flowcast_secret_key_12345'
       - HOLDOUT_DAYS=${HOLDOUT_DAYS:-}
+      - DECISION_METRIC=${DECISION_METRIC:-}
+      - MIN_IMPROVEMENT=${MIN_IMPROVEMENT:-}
+      - MAX_BIAS_DEGRADATION=${MAX_BIAS_DEGRADATION:-}
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./data:/opt/airflow/data
@@ -94,6 +97,9 @@ services:
       - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI}
       - MODEL_NAME=${MODEL_NAME}
       - HOLDOUT_DAYS=${HOLDOUT_DAYS:-}
+      - DECISION_METRIC=${DECISION_METRIC:-}
+      - MIN_IMPROVEMENT=${MIN_IMPROVEMENT:-}
+      - MAX_BIAS_DEGRADATION=${MAX_BIAS_DEGRADATION:-}
     volumes:
       - ./data:/app/data
       - ./ml_agent/src:/app/src

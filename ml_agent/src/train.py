@@ -1,14 +1,13 @@
 import os
 import duckdb
-import numpy as np
 import pandas as pd
 import lightgbm as lgb
-from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 import mlflow
 import mlflow.lightgbm
 from mlflow.tracking import MlflowClient  # <-- Nova importação necessária
 
-from config import DB_PATH, EXPERIMENT_NAME, HOLDOUT_DAYS, get_holdout_start
+from config import DB_PATH, DECISION_METRIC, EXPERIMENT_NAME, HOLDOUT_DAYS, get_holdout_start
+from metrics import compute_all, lgb_feval
 
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
 
@@ -22,13 +21,6 @@ if experiment and experiment.lifecycle_stage == "deleted":
     client.restore_experiment(experiment.experiment_id)
 
 mlflow.set_experiment(EXPERIMENT_NAME)
-
-def calculate_smape(y_true, y_pred):
-    """Calcula a métrica SMAPE (Symmetric Mean Absolute Percentage Error)."""
-    denominator = (np.abs(y_true) + np.abs(y_pred)) / 2.0
-    diff = np.abs(y_pred - y_true) / denominator
-    diff[denominator == 0] = 0.0
-    return 100 * np.mean(diff)
 
 def train():
     print(f"Conectando ao DuckDB em {DB_PATH}...")
@@ -59,7 +51,8 @@ def train():
 
     params = {
         'objective': 'regression',
-        'metric': 'mae',
+        # Desliga a metrica embutida: o early stopping usa a metrica de decisao via feval.
+        'metric': 'None',
         'boosting_type': 'gbdt',
         'n_estimators': 500,
         'learning_rate': 0.05,
@@ -78,6 +71,7 @@ def train():
             params=params,
             train_set=dtrain,
             valid_sets=[dval],
+            feval=lgb_feval(DECISION_METRIC),
             callbacks=[
                 lgb.early_stopping(stopping_rounds=50, verbose=False),
                 lgb.log_evaluation(period=100)
@@ -86,28 +80,25 @@ def train():
 
         preds = model.predict(X_val)
 
-        smape_score = calculate_smape(y_val.values, preds)
-        mae_score = mean_absolute_error(y_val, preds)
-        rmse_score = root_mean_squared_error(y_val, preds)
-        bias_score = np.mean(preds - y_val.values)
+        scores = compute_all(y_val.values, preds)
 
         mlflow.log_params(params)
-        mlflow.log_params({"holdout_days": HOLDOUT_DAYS, "holdout_start": str(holdout_start.date())})
-
-        mlflow.log_metrics({
-            "smape": smape_score,
-            "mae": mae_score,
-            "rmse": rmse_score,
-            "bias": bias_score
+        mlflow.log_params({
+            "holdout_days": HOLDOUT_DAYS,
+            "holdout_start": str(holdout_start.date()),
+            "early_stopping_metric": DECISION_METRIC,
         })
+
+        mlflow.log_metrics(scores)
 
         mlflow.lightgbm.log_model(model, artifact_path="model")
 
         print("\n--- Resultado da Validação ---")
-        print(f"SMAPE: {smape_score:.4f}%")
-        print(f"MAE:   {mae_score:.4f}")
-        print(f"RMSE:  {rmse_score:.4f}")
-        print(f"Bias:  {bias_score:.4f}")
+        print(f"SMAPE: {scores['smape']:.4f}%")
+        print(f"MAE:   {scores['mae']:.4f}")
+        print(f"RMSE:  {scores['rmse']:.4f}")
+        print(f"Bias:  {scores['bias']:.4f}")
+        print(f"Early stopping por '{DECISION_METRIC}' na iteracao {model.best_iteration}")
         print("\nExperimento e métricas registrados com sucesso no MLflow!")
 
 
