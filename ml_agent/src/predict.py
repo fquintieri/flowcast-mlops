@@ -5,40 +5,33 @@ import pandas as pd
 import mlflow
 from mlflow.tracking import MlflowClient
 
+from config import MODEL_NAME
+from registry import CHAMPION_ALIAS, get_champion_version
+
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
-MODEL_NAME = os.getenv("MODEL_NAME", "flowcast_demand_model")
 DB_PATH = "/app/data/database.duckdb"
 SUBMISSION_PATH = "/app/data/submission.csv"
 
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
-def load_champion_or_fallback():
-    client = MlflowClient()
-    
-    try:
-        print(f"Buscando modelo em producao: models:/{MODEL_NAME}@Champion")
-        return mlflow.pyfunc.load_model(f"models:/{MODEL_NAME}@Champion")
-    except Exception:
-        print("Nenhum modelo marcado como @Champion foi encontrado.")
+def load_champion():
+    """Carrega somente o modelo aprovado (@Champion). Sem Champion, falha explicitamente."""
+    print(f"Buscando modelo em producao: models:/{MODEL_NAME}@{CHAMPION_ALIAS}")
+    champion_version = get_champion_version(MlflowClient())
 
-    try:
-        versions = client.get_latest_versions(MODEL_NAME)
-        if versions:
-            latest_version = versions[0].version
-            print(f"Fallback ativado: Carregando a versao mais recente (v{latest_version})...")
-            return mlflow.pyfunc.load_model(f"models:/{MODEL_NAME}/{latest_version}")
-    except Exception:
-        pass
+    if champion_version is None:
+        print(
+            f"ERRO: nenhum modelo '{MODEL_NAME}' com alias @{CHAMPION_ALIAS} no Model Registry. "
+            "A inferencia nao usa modelos nao aprovados. "
+            "Execute o DAG 'flowcast_weekly_retrain', que trata o cold start promovendo o primeiro Champion."
+        )
+        sys.exit(1)
 
-    return None
+    print(f"Champion: versao {champion_version.version} (run {champion_version.run_id})")
+    return mlflow.pyfunc.load_model(f"models:/{MODEL_NAME}/{champion_version.version}")
 
 def predict():
-    model = load_champion_or_fallback()
-    
-    if model is None:
-        print("[COLD START] Nenhum modelo encontrado no MLflow.")
-        print("Dica: Execute primeiro o pipeline de treinamento ('train.py' + 'promote_model.py').")
-        sys.exit(0)
+    model = load_champion()
 
     print("Modelo carregado com sucesso! Lendo dados de teste do DuckDB...")
     
