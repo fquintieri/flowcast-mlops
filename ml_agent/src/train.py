@@ -8,6 +8,7 @@ import mlflow.lightgbm
 from mlflow.tracking import MlflowClient  # <-- Nova importação necessária
 
 from config import DB_PATH, DECISION_METRIC, EXPERIMENT_NAME, HOLDOUT_DAYS, get_holdout_start
+from lineage import fingerprint_dataframe, get_git_commit
 from metrics import compute_all, lgb_feval
 
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
@@ -47,6 +48,19 @@ def train():
 
     print(f"Atributos utilizados ({len(features)}): {features}")
 
+    git_commit = get_git_commit()
+    if git_commit is None:
+        print("AVISO: hash do commit indisponivel (.git nao montado em /app/.git); tag git_commit='unknown'.")
+    reproducibility_tags = {
+        "git_commit": git_commit or "unknown",
+        "data_rows": str(len(df)),
+        "data_train_rows": str(len(train_df)),
+        "data_holdout_rows": str(len(val_df)),
+        "data_max_date": str(df['date'].max().date()),
+        "data_sha256": fingerprint_dataframe(df, ['date', 'store', 'item']),
+    }
+    print(f"Rastreabilidade: {reproducibility_tags}")
+
     X_train, y_train = train_df[features], train_df[target]
     X_val, y_val = val_df[features], val_df[target]
 
@@ -62,7 +76,7 @@ def train():
         'n_jobs': -1
     }
 
-    with mlflow.start_run() as run:
+    with mlflow.start_run(tags=reproducibility_tags) as run:
         print("\nTreinando o modelo LightGBM...")
 
         dtrain = lgb.Dataset(X_train, label=y_train)

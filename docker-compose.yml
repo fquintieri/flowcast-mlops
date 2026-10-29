@@ -28,7 +28,7 @@ services:
       - -c
       - |
         set -e
-        airflow db init
+        airflow db migrate
         airflow pools set duckdb_writer 1 "Exclusao mutua de acesso ao arquivo DuckDB"
         airflow users create \
           --username admin \
@@ -51,7 +51,7 @@ services:
       - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
-      - AIRFLOW__WEBSERVER__SECRET_KEY= 'flowcast_secret_key_12345'
+      - AIRFLOW__WEBSERVER__SECRET_KEY=${AIRFLOW_SECRET_KEY:?Defina AIRFLOW_SECRET_KEY no .env}
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./data:/opt/airflow/data
@@ -74,7 +74,7 @@ services:
       - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
-      - AIRFLOW__WEBSERVER__SECRET_KEY= 'flowcast_secret_key_12345'
+      - AIRFLOW__WEBSERVER__SECRET_KEY=${AIRFLOW_SECRET_KEY:?Defina AIRFLOW_SECRET_KEY no .env}
       - HOLDOUT_DAYS=${HOLDOUT_DAYS:-}
       - DECISION_METRIC=${DECISION_METRIC:-}
       - MIN_IMPROVEMENT=${MIN_IMPROVEMENT:-}
@@ -103,6 +103,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./ml_agent/src:/app/src
+      - ./.git:/app/.git:ro
     profiles: ["tools"]
 
   mlflow_ui:

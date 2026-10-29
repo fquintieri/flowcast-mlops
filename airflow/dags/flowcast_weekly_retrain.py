@@ -13,6 +13,7 @@ from util import (
 HOST_ROOT = get_host_project_root()
 HOST_DATA_PATH = f"{HOST_ROOT}/data"
 HOST_SRC_PATH = f"{HOST_ROOT}/ml_agent/src"
+HOST_GIT_PATH = f"{HOST_ROOT}/.git"
 
 default_args = {
     "owner": "flowcast_mlops",
@@ -94,7 +95,9 @@ with DAG(
         network_mode="flowcast-mlops_default",
         mounts=[
             Mount(source=HOST_DATA_PATH, target="/app/data", type="bind"),
-            Mount(source=HOST_SRC_PATH, target="/app/src", type="bind")
+            Mount(source=HOST_SRC_PATH, target="/app/src", type="bind"),
+            # Somente leitura: permite registrar o hash do commit no MLflow
+            Mount(source=HOST_GIT_PATH, target="/app/.git", type="bind", read_only=True),
         ],
         environment={
             "MLFLOW_TRACKING_URI": "http://flowcast_mlflow_ui:5000",
