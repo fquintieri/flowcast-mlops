@@ -6,7 +6,9 @@ from airflow.operators.python import BranchPythonOperator
 from airflow.providers.docker.operators.docker import DockerOperator
 from docker.types import Mount
 
-from util import DUCKDB_POOL, get_host_project_root, get_ml_config_env
+from util import (
+    DUCKDB_POOL, extract_run_id, get_host_project_root, get_ml_config_env, parse_json_output,
+)
 
 HOST_ROOT = get_host_project_root()
 HOST_DATA_PATH = f"{HOST_ROOT}/data"
@@ -20,12 +22,24 @@ default_args = {
     "retry_delay": timedelta(minutes=10),
 }
 
+TRAIN_TASK_ID = "treinar_modelo_challenger"
+EVALUATE_TASK_ID = "avaliar_challenger_vs_champion"
+
 def route_evaluation(**context):
-    eval_output = context['ti'].xcom_pull(task_ids='avaliar_challenger_vs_champion')
-    
-    if eval_output and "promover_modelo_champion" in eval_output:
+    ti = context['ti']
+    trained_run_id = extract_run_id(ti.xcom_pull(task_ids=TRAIN_TASK_ID), TRAIN_TASK_ID)
+    decision = parse_json_output(ti.xcom_pull(task_ids=EVALUATE_TASK_ID), EVALUATE_TASK_ID)
+    print(f"Decisao recebida: {decision}")
+
+    if decision.get("run_id") != trained_run_id:
+        raise ValueError(
+            f"O run avaliado ({decision.get('run_id')}) difere do run treinado ({trained_run_id})."
+        )
+    if decision.get("decision") == "promote":
         return "promover_modelo_champion"
-    return "rejeitar_modelo_challenger"
+    if decision.get("decision") == "reject":
+        return "rejeitar_modelo_challenger"
+    raise ValueError(f"Decisao desconhecida na saida da avaliacao: {decision.get('decision')!r}")
 
 with DAG(
     dag_id="flowcast_weekly_retrain",
@@ -35,6 +49,7 @@ with DAG(
     catchup=False,
     max_active_runs=1,
     tags=["mlops", "weekly", "training"],
+    user_defined_filters={"run_id": extract_run_id},
 ) as dag:
 
     ingest_data = DockerOperator(
@@ -69,7 +84,7 @@ with DAG(
     )
 
     train_challenger = DockerOperator(
-        task_id="treinar_modelo_challenger",
+        task_id=TRAIN_TASK_ID,
         pool=DUCKDB_POOL,
         image="flowcast-mlagent:latest",
         api_version="auto",
@@ -84,16 +99,17 @@ with DAG(
         environment={
             "MLFLOW_TRACKING_URI": "http://flowcast_mlflow_ui:5000",
             **get_ml_config_env(),
-        }
+        },
+        do_xcom_push=True, # Publica {"run_id": ...} (ultima linha do stdout) para avaliacao e promocao
     )
 
     evaluate_model = DockerOperator(
-        task_id="avaliar_challenger_vs_champion",
+        task_id=EVALUATE_TASK_ID,
         pool=DUCKDB_POOL,
         image="flowcast-mlagent:latest",
         api_version="auto",
         auto_remove="force",
-        command="python -u src/evaluate_model.py",
+        command=f"python -u src/evaluate_model.py --run-id {{{{ ti.xcom_pull(task_ids='{TRAIN_TASK_ID}') | run_id }}}}",
         docker_url="unix://var/run/docker.sock",
         network_mode="flowcast-mlops_default",
         mounts=[
@@ -104,7 +120,7 @@ with DAG(
             "MLFLOW_TRACKING_URI": "http://flowcast_mlflow_ui:5000",
             **get_ml_config_env(),
         },
-        do_xcom_push=True, # Habilita a captura dos logs para o BranchPythonOperator ler
+        do_xcom_push=True, # Publica a decisao em JSON (ultima linha) para o BranchPythonOperator
     )
 
     branch_decision = BranchPythonOperator(
@@ -117,7 +133,7 @@ with DAG(
         image="flowcast-mlagent:latest",
         api_version="auto",
         auto_remove="force",
-        command="python -u src/promote_model.py",
+        command=f"python -u src/promote_model.py --run-id {{{{ ti.xcom_pull(task_ids='{EVALUATE_TASK_ID}') | run_id }}}}",
         docker_url="unix://var/run/docker.sock",
         network_mode="flowcast-mlops_default",
         mounts=[

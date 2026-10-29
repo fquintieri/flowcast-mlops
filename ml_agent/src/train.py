@@ -1,3 +1,4 @@
+import json
 import os
 import duckdb
 import pandas as pd
@@ -61,7 +62,7 @@ def train():
         'n_jobs': -1
     }
 
-    with mlflow.start_run():
+    with mlflow.start_run() as run:
         print("\nTreinando o modelo LightGBM...")
 
         dtrain = lgb.Dataset(X_train, label=y_train)
@@ -100,6 +101,10 @@ def train():
         print(f"Bias:  {scores['bias']:.4f}")
         print(f"Early stopping por '{DECISION_METRIC}' na iteracao {model.best_iteration}")
         print("\nExperimento e métricas registrados com sucesso no MLflow!")
+        run_id = run.info.run_id
+
+    # Ultima linha do stdout: contrato lido pelo Airflow via XCom. Nada deve ser impresso depois.
+    print(json.dumps({"run_id": run_id}), flush=True)
 
 
 if __name__ == "__main__":

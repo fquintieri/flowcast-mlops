@@ -1,3 +1,5 @@
+import argparse
+import json
 import os
 import sys
 import duckdb
@@ -79,23 +81,21 @@ def log_decision(run_id, challenger, champion, champion_version, decision, reaso
     client.set_tag(run_id, "decision_reason", reason)
     client.set_tag(run_id, "decision_champion_version", champion_version.version if champion_version else "none")
 
-def evaluate():
+def evaluate(challenger_run_id):
     experiment = client.get_experiment_by_name(EXPERIMENT_NAME)
     if not experiment:
         print("Erro: Experimento não encontrado no MLflow.")
         sys.exit(1)
 
-    runs = client.search_runs(
-        experiment_ids=[experiment.experiment_id],
-        order_by=["start_time DESC"],
-        max_results=1
-    )
-
-    if not runs:
-        print("Erro: Nenhuma execução encontrada para avaliar.")
+    # Avalia exatamente o run informado pelo treino; nunca "o mais recente".
+    challenger_run = client.get_run(challenger_run_id)
+    if challenger_run.info.experiment_id != experiment.experiment_id:
+        print(f"Erro: o run {challenger_run_id} nao pertence ao experimento '{EXPERIMENT_NAME}'.")
+        sys.exit(1)
+    if challenger_run.info.status != "FINISHED":
+        print(f"Erro: o run {challenger_run_id} esta com status {challenger_run.info.status}, esperado FINISHED.")
         sys.exit(1)
 
-    challenger_run_id = runs[0].info.run_id
     holdout = load_holdout()
 
     print(f"Carregando Challenger (run {challenger_run_id})...")
@@ -115,10 +115,20 @@ def evaluate():
     log_decision(challenger_run_id, challenger_scores, champion_scores, champion_version, decision, reason)
     print(f"Decisao: {decision} (motivo: {reason}, metrica: {DECISION_METRIC})")
 
-    if decision == "promote":
-        print("promover_modelo_champion")
-    else:
-        print("rejeitar_modelo_challenger")
+    # Ultima linha do stdout: contrato lido pelo BranchPythonOperator via XCom.
+    print(json.dumps({
+        "decision": decision,
+        "reason": reason,
+        "run_id": challenger_run_id,
+        "metric": DECISION_METRIC,
+        "min_improvement": MIN_IMPROVEMENT,
+        "max_bias_degradation": MAX_BIAS_DEGRADATION,
+        "challenger": challenger_scores,
+        "champion": champion_scores,
+        "champion_version": champion_version.version if champion_version else None,
+    }), flush=True)
 
 if __name__ == "__main__":
-    evaluate()
+    parser = argparse.ArgumentParser(description="Avalia o Challenger contra o Champion no mesmo holdout.")
+    parser.add_argument("--run-id", required=True, help="run_id do Challenger gerado pelo train.py")
+    evaluate(parser.parse_args().run_id)

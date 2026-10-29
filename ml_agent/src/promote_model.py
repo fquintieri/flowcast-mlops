@@ -1,15 +1,18 @@
+import argparse
+import json
 import os
 import sys
 import mlflow
 from mlflow.tracking import MlflowClient
 
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
-MODEL_NAME = os.getenv("MODEL_NAME", "flowcast_demand_model")
-EXPERIMENT_NAME = "flowcast_demand_forecasting"
+from config import EXPERIMENT_NAME, MODEL_NAME
+from registry import CHAMPION_ALIAS
 
-def promote_challenger_to_champion():
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
+
+def promote_challenger_to_champion(run_id):
     print("--- Iniciando Promocao do Modelo Challenger para Champion ---")
-    
+
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     client = MlflowClient()
 
@@ -18,20 +21,17 @@ def promote_challenger_to_champion():
         print(f"Erro: Experimento '{EXPERIMENT_NAME}' nao encontrado.")
         sys.exit(1)
 
-    experiment_id = experiment.experiment_id
-
-    runs = client.search_runs(
-        experiment_ids=[experiment_id],  # <--- Agora usa a variável no lugar do "0"
-        order_by=["attribute.start_time DESC"],
-        max_results=1
-    )
-
-    if not runs:
-        print("Erro: Nenhuma execucao encontrada no MLflow para promover.")
+    # Promove exatamente o run avaliado; nunca "o mais recente".
+    run = client.get_run(run_id)
+    if run.info.experiment_id != experiment.experiment_id:
+        print(f"Erro: o run {run_id} nao pertence ao experimento '{EXPERIMENT_NAME}'.")
         sys.exit(1)
 
-    latest_run = runs[0]
-    run_id = latest_run.info.run_id
+    decision = run.data.tags.get("decision")
+    if decision != "promote":
+        print(f"Erro: o run {run_id} nao foi aprovado na avaliacao (tag decision={decision!r}).")
+        sys.exit(1)
+
     model_uri = f"runs:/{run_id}/model"
 
     print(f"Challenger localizado | Run ID: {run_id}")
@@ -40,14 +40,17 @@ def promote_challenger_to_champion():
     model_version = mlflow.register_model(model_uri, MODEL_NAME)
     version_number = model_version.version
 
-    print(f"Atribuindo o alias 'Champion' a versao {version_number}...")
+    print(f"Atribuindo o alias '{CHAMPION_ALIAS}' a versao {version_number}...")
     client.set_registered_model_alias(
         name=MODEL_NAME,
-        alias="Champion",
+        alias=CHAMPION_ALIAS,
         version=version_number
     )
 
-    print(f"Sucesso! Versao {version_number} do modelo agora e o 'Champion' ativo em Producao.\n")
+    print(f"Sucesso! Versao {version_number} do modelo agora e o '{CHAMPION_ALIAS}' ativo em Producao.\n")
+    print(json.dumps({"promoted_run_id": run_id, "model": MODEL_NAME, "version": version_number}), flush=True)
 
 if __name__ == "__main__":
-    promote_challenger_to_champion()
+    parser = argparse.ArgumentParser(description="Promove o run avaliado a Champion no Model Registry.")
+    parser.add_argument("--run-id", required=True, help="run_id aprovado pelo evaluate_model.py")
+    promote_challenger_to_champion(parser.parse_args().run_id)
