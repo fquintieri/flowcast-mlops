@@ -7,3 +7,4 @@ scikit-learn==1.9.0
 joblib==1.5.3
 mlflow==2.14.1
 setuptools==70.0.0
+SQLAlchemy==2.0.55
