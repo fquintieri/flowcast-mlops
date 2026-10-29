@@ -75,6 +75,7 @@ services:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
       - AIRFLOW__WEBSERVER__SECRET_KEY= 'flowcast_secret_key_12345'
+      - HOLDOUT_DAYS=${HOLDOUT_DAYS:-}
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./data:/opt/airflow/data
@@ -92,6 +93,7 @@ services:
       - KAGGLE_API_TOKEN=${KAGGLE_API_TOKEN}
       - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI}
       - MODEL_NAME=${MODEL_NAME}
+      - HOLDOUT_DAYS=${HOLDOUT_DAYS:-}
     volumes:
       - ./data:/app/data
       - ./ml_agent/src:/app/src

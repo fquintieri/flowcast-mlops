@@ -5,6 +5,14 @@ import docker
 # um escritor bloqueia qualquer outro processo, inclusive leitores read_only).
 DUCKDB_POOL = "duckdb_writer"
 
+# Parametros de ML repassados aos containers apenas quando definidos; os valores
+# padrao vivem em ml_agent/src/config.py.
+ML_CONFIG_VARS = ["HOLDOUT_DAYS"]
+
+
+def get_ml_config_env():
+    return {name: os.environ[name] for name in ML_CONFIG_VARS if os.environ.get(name)}
+
 def get_host_project_root():
 
     try:

@@ -8,8 +8,9 @@ import mlflow
 import mlflow.lightgbm
 from mlflow.tracking import MlflowClient  # <-- Nova importação necessária
 
+from config import DB_PATH, EXPERIMENT_NAME, HOLDOUT_DAYS, get_holdout_start
+
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
-EXPERIMENT_NAME = "flowcast_demand_forecasting"
 
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
@@ -30,21 +31,21 @@ def calculate_smape(y_true, y_pred):
     return 100 * np.mean(diff)
 
 def train():
-    db_path = "/app/data/database.duckdb"
-    print(f"Conectando ao DuckDB em {db_path}...")
-    conn = duckdb.connect(db_path)
+    print(f"Conectando ao DuckDB em {DB_PATH}...")
+    conn = duckdb.connect(DB_PATH)
 
     print("Carregando tabela 'features_sales'...")
     df = conn.execute("SELECT * FROM features_sales").df()
+    holdout_start = pd.Timestamp(get_holdout_start(conn))
     conn.close()
 
     df['date'] = pd.to_datetime(df['date'])
     df = df.sort_values('date').reset_index(drop=True)
 
-    split_date = '2017-10-01'
-    train_df = df[df['date'] < split_date]
-    val_df = df[df['date'] >= split_date]
+    train_df = df[df['date'] < holdout_start]
+    val_df = df[df['date'] >= holdout_start]
 
+    print(f"Holdout: ultimos {HOLDOUT_DAYS} dias, a partir de {holdout_start.date()}")
     print(f"Registros de Treino: {len(train_df):,} | Validação: {len(val_df):,}")
 
     ignore_cols = ['date', 'store', 'item', 'sales']
@@ -91,6 +92,7 @@ def train():
         bias_score = np.mean(preds - y_val.values)
 
         mlflow.log_params(params)
+        mlflow.log_params({"holdout_days": HOLDOUT_DAYS, "holdout_start": str(holdout_start.date())})
 
         mlflow.log_metrics({
             "smape": smape_score,

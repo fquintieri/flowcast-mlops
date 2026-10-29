@@ -6,7 +6,7 @@ from airflow.operators.python import BranchPythonOperator
 from airflow.providers.docker.operators.docker import DockerOperator
 from docker.types import Mount
 
-from util import DUCKDB_POOL, get_host_project_root
+from util import DUCKDB_POOL, get_host_project_root, get_ml_config_env
 
 HOST_ROOT = get_host_project_root()
 HOST_DATA_PATH = f"{HOST_ROOT}/data"
@@ -83,11 +83,13 @@ with DAG(
         ],
         environment={
             "MLFLOW_TRACKING_URI": "http://flowcast_mlflow_ui:5000",
+            **get_ml_config_env(),
         }
     )
 
     evaluate_model = DockerOperator(
         task_id="avaliar_challenger_vs_champion",
+        pool=DUCKDB_POOL,
         image="flowcast-mlagent:latest",
         api_version="auto",
         auto_remove="force",
@@ -100,6 +102,7 @@ with DAG(
         ],
         environment={
             "MLFLOW_TRACKING_URI": "http://flowcast_mlflow_ui:5000",
+            **get_ml_config_env(),
         },
         do_xcom_push=True, # Habilita a captura dos logs para o BranchPythonOperator ler
     )
