@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 import duckdb
 import pandas as pd
 import mlflow
@@ -13,6 +14,22 @@ DB_PATH = "/app/data/database.duckdb"
 SUBMISSION_PATH = "/app/data/submission.csv"
 
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+
+def write_csv_atomically(df, path):
+    """Grava em arquivo temporario no mesmo diretorio e troca com os.replace (atomico),
+    para que leitores (ex.: dashboard) nunca vejam um arquivo parcialmente escrito."""
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".submission-", suffix=".csv.tmp")
+    try:
+        with os.fdopen(fd, "w", newline="") as tmp_file:
+            df.to_csv(tmp_file, index=False)
+            tmp_file.flush()
+            os.fsync(tmp_file.fileno())
+        os.chmod(tmp_path, 0o644)
+        os.replace(tmp_path, path)
+    except BaseException:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
 
 def load_champion():
     """Carrega somente o modelo aprovado (@Champion). Sem Champion, falha explicitamente."""
@@ -60,7 +77,7 @@ def predict():
     })
 
     print(f"Salvando resultados em {SUBMISSION_PATH}...")
-    submission_df.to_csv(SUBMISSION_PATH, index=False)
+    write_csv_atomically(submission_df, SUBMISSION_PATH)
     print("Sucesso! Arquivo submission.csv gerado. O Dashboard ja pode ser atualizado.")
 
 if __name__ == "__main__":
