@@ -1,6 +1,10 @@
 import os
 import docker
 
+# Pool de 1 slot que serializa todo acesso ao arquivo DuckDB (o lock e por processo:
+# um escritor bloqueia qualquer outro processo, inclusive leitores read_only).
+DUCKDB_POOL = "duckdb_writer"
+
 def get_host_project_root():
 
     try:

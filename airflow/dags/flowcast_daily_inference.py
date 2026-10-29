@@ -4,7 +4,7 @@ from airflow import DAG
 from airflow.providers.docker.operators.docker import DockerOperator
 from docker.types import Mount
 
-from util import get_host_project_root
+from util import DUCKDB_POOL, get_host_project_root
 
 HOST_ROOT = get_host_project_root()
 HOST_DATA_PATH = f"{HOST_ROOT}/data"
@@ -22,7 +22,7 @@ with DAG(
     dag_id="flowcast_daily_inference",
     default_args=default_args,
     description="Pipeline Diario de Ingestao e Inferencia de Vendas",
-    schedule="@daily",
+    schedule="0 2 * * *",
     catchup=False,
     max_active_runs=1,
     tags=["mlops", "daily", "inference"],
@@ -30,6 +30,7 @@ with DAG(
 
     ingest_data = DockerOperator(
         task_id="ingestao_de_dados_diaria",
+        pool=DUCKDB_POOL,
         image="flowcast-mlagent:latest",
         api_version="auto",
         auto_remove="force",
@@ -45,6 +46,7 @@ with DAG(
 
     update_features = DockerOperator(
         task_id="atualizar_atributos_lags",
+        pool=DUCKDB_POOL,
         image="flowcast-mlagent:latest",
         api_version="auto",
         auto_remove="force",
@@ -59,6 +61,7 @@ with DAG(
 
     generate_predictions = DockerOperator(
         task_id="gerar_previsoes_diarias",
+        pool=DUCKDB_POOL,
         image="flowcast-mlagent:latest",
         api_version="auto",
         auto_remove="force",

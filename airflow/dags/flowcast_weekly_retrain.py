@@ -6,7 +6,7 @@ from airflow.operators.python import BranchPythonOperator
 from airflow.providers.docker.operators.docker import DockerOperator
 from docker.types import Mount
 
-from util import get_host_project_root
+from util import DUCKDB_POOL, get_host_project_root
 
 HOST_ROOT = get_host_project_root()
 HOST_DATA_PATH = f"{HOST_ROOT}/data"
@@ -31,7 +31,7 @@ with DAG(
     dag_id="flowcast_weekly_retrain",
     default_args=default_args,
     description="Pipeline Semanal de Retreinamento, Avaliacao Champion vs Challenger e Promocao",
-    schedule="@weekly",
+    schedule="0 4 * * 0",
     catchup=False,
     max_active_runs=1,
     tags=["mlops", "weekly", "training"],
@@ -39,6 +39,7 @@ with DAG(
 
     ingest_data = DockerOperator(
         task_id="ingestao_de_dados",
+        pool=DUCKDB_POOL,
         image="flowcast-mlagent:latest",
         api_version="auto",
         auto_remove="force",
@@ -54,6 +55,7 @@ with DAG(
 
     feature_engineering = DockerOperator(
         task_id="engenharia_de_atributos",
+        pool=DUCKDB_POOL,
         image="flowcast-mlagent:latest",
         api_version="auto",
         auto_remove="force",
@@ -68,6 +70,7 @@ with DAG(
 
     train_challenger = DockerOperator(
         task_id="treinar_modelo_challenger",
+        pool=DUCKDB_POOL,
         image="flowcast-mlagent:latest",
         api_version="auto",
         auto_remove="force",
@@ -130,6 +133,7 @@ with DAG(
 
     refresh_predictions = DockerOperator(
         task_id="atualizar_previsoes_pos_treino",
+        pool=DUCKDB_POOL,
         image="flowcast-mlagent:latest",
         api_version="auto",
         auto_remove="force",

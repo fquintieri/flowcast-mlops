@@ -27,7 +27,9 @@ services:
     command:
       - -c
       - |
+        set -e
         airflow db init
+        airflow pools set duckdb_writer 1 "Exclusao mutua de acesso ao arquivo DuckDB"
         airflow users create \
           --username admin \
           --password admin \
